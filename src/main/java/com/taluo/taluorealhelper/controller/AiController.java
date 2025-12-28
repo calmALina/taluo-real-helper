@@ -16,7 +16,7 @@ public class AiController {
     @Resource
     private AiTaluoService aiTaluoService;
 
-    @GetMapping("/Chat")
+    @GetMapping("/chat")
     public Flux<ServerSentEvent<String>> chat(int memoryId,String message) {
         return aiTaluoService.chatStream(memoryId, message)
                 .map(chunk -> ServerSentEvent.<String>builder()
