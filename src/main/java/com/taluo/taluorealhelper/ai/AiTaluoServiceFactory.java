@@ -1,7 +1,9 @@
 package com.taluo.taluorealhelper.ai;
 
 import com.taluo.taluorealhelper.ai.Guardrail.SafeInputGuardrail;
+import com.taluo.taluorealhelper.ai.Tool.SqlTool;
 import com.taluo.taluorealhelper.ai.Tool.TaluoKnowledgeTool;
+import com.taluo.taluorealhelper.ai.Tool.TarotDrawTool;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.guardrail.InputGuardrail;
 import dev.langchain4j.mcp.McpToolProvider;
@@ -23,6 +25,12 @@ public class AiTaluoServiceFactory {
     private ChatModel qwenChatModel;
 
     @Resource
+    private SqlTool sqlTool;
+
+    @Resource
+    private TarotDrawTool tarotDrawTool;
+
+    @Resource
     private ContentRetriever contentRetriever;
 
     @Resource
@@ -41,8 +49,8 @@ public class AiTaluoServiceFactory {
                 .streamingChatModel(streamingChatModel)//流式输出
                 .chatMemory(messageWindowChatMemory)//会话记忆
                 .chatMemoryProvider(memoryId ->MessageWindowChatMemory.withMaxMessages(10))//每个会话独立存储
-                .contentRetriever(contentRetriever)//Rag检索
-                .tools(new TaluoKnowledgeTool())//工具调用
+                //.contentRetriever(contentRetriever)//Rag检索
+                .tools(sqlTool,tarotDrawTool)//工具调用
                 .toolProvider(mcpToolProvider)//Mcp工具调用
                 .inputGuardrails(Arrays.asList(new InputGuardrail[]{new SafeInputGuardrail()}))
                 .build();
