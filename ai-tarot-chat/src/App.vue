@@ -118,6 +118,51 @@
       </div>
     </div>
 
+    <!-- 抽牌界面 -->
+    <div v-if="showTarotDraw" class="tarot-draw-overlay" @click.self="closeTarotDraw">
+      <div class="tarot-draw-modal">
+        <div class="tarot-header">
+          <h2>🔮 抽取塔罗牌</h2>
+          <p class="tarot-message">{{ tarotDrawConfig?.message || '请选择塔罗牌' }}</p>
+          <p class="tarot-progress">已选择: {{ selectedCards.length }} / {{ tarotDrawConfig?.count || 3 }}</p>
+        </div>
+
+        <div class="tarot-cards-grid">
+          <button
+              v-for="card in shuffledCards"
+              :key="card.id"
+              @click="handleCardSelect(card)"
+              :disabled="isCardSelected(card) || selectedCards.length >= (tarotDrawConfig?.count || 3)"
+              :class="['tarot-card', { 'selected': isCardSelected(card) }]"
+          >
+            {{ isCardSelected(card) ? '✓' : '?' }}
+          </button>
+        </div>
+
+        <div v-if="selectedCards.length > 0" class="selected-cards-info">
+          <h3>已选择的牌:</h3>
+          <div class="selected-cards-list">
+            <div v-for="(card, idx) in selectedCards" :key="card.id" class="selected-card-item">
+              {{ idx + 1 }}. {{ card.name }} ({{ card.reversed ? '逆位' : '正位' }})
+            </div>
+          </div>
+        </div>
+
+        <div class="tarot-actions">
+          <button @click="closeTarotDraw" class="tarot-btn tarot-btn-cancel">
+            取消
+          </button>
+          <button
+              v-if="selectedCards.length === (tarotDrawConfig?.count || 3)"
+              @click="confirmTarotDraw"
+              class="tarot-btn tarot-btn-confirm"
+          >
+            确认抽牌
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 遮罩层 (移动端) -->
     <div
         v-if="isSidebarOpen"
@@ -130,6 +175,93 @@
 <script>
 import { ref, computed, nextTick, onMounted, watch } from 'vue';
 
+// 78张塔罗牌数据
+const TAROT_CARDS = [
+  // 大阿尔卡那 (22张)
+  { id: 0, name: '愚者', nameEn: 'The Fool', type: 'major' },
+  { id: 1, name: '魔术师', nameEn: 'The Magician', type: 'major' },
+  { id: 2, name: '女祭司', nameEn: 'The High Priestess', type: 'major' },
+  { id: 3, name: '皇后', nameEn: 'The Empress', type: 'major' },
+  { id: 4, name: '皇帝', nameEn: 'The Emperor', type: 'major' },
+  { id: 5, name: '教皇', nameEn: 'The Hierophant', type: 'major' },
+  { id: 6, name: '恋人', nameEn: 'The Lovers', type: 'major' },
+  { id: 7, name: '战车', nameEn: 'The Chariot', type: 'major' },
+  { id: 8, name: '力量', nameEn: 'Strength', type: 'major' },
+  { id: 9, name: '隐士', nameEn: 'The Hermit', type: 'major' },
+  { id: 10, name: '命运之轮', nameEn: 'Wheel of Fortune', type: 'major' },
+  { id: 11, name: '正义', nameEn: 'Justice', type: 'major' },
+  { id: 12, name: '倒吊人', nameEn: 'The Hanged Man', type: 'major' },
+  { id: 13, name: '死神', nameEn: 'Death', type: 'major' },
+  { id: 14, name: '节制', nameEn: 'Temperance', type: 'major' },
+  { id: 15, name: '恶魔', nameEn: 'The Devil', type: 'major' },
+  { id: 16, name: '高塔', nameEn: 'The Tower', type: 'major' },
+  { id: 17, name: '星星', nameEn: 'The Star', type: 'major' },
+  { id: 18, name: '月亮', nameEn: 'The Moon', type: 'major' },
+  { id: 19, name: '太阳', nameEn: 'The Sun', type: 'major' },
+  { id: 20, name: '审判', nameEn: 'Judgement', type: 'major' },
+  { id: 21, name: '世界', nameEn: 'The World', type: 'major' },
+  // 小阿尔卡那 - 权杖 (14张)
+  { id: 22, name: '权杖ACE', nameEn: 'ACE of Wands', type: 'minor' },
+  { id: 23, name: '权杖2', nameEn: '2 of Wands', type: 'minor' },
+  { id: 24, name: '权杖3', nameEn: '3 of Wands', type: 'minor' },
+  { id: 25, name: '权杖4', nameEn: '4 of Wands', type: 'minor' },
+  { id: 26, name: '权杖5', nameEn: '5 of Wands', type: 'minor' },
+  { id: 27, name: '权杖6', nameEn: '6 of Wands', type: 'minor' },
+  { id: 28, name: '权杖7', nameEn: '7 of Wands', type: 'minor' },
+  { id: 29, name: '权杖8', nameEn: '8 of Wands', type: 'minor' },
+  { id: 30, name: '权杖9', nameEn: '9 of Wands', type: 'minor' },
+  { id: 31, name: '权杖10', nameEn: '10 of Wands', type: 'minor' },
+  { id: 32, name: '权杖侍从', nameEn: 'Page of Wands', type: 'minor' },
+  { id: 33, name: '权杖骑士', nameEn: 'Knight of Wands', type: 'minor' },
+  { id: 34, name: '权杖王后', nameEn: 'Queen of Wands', type: 'minor' },
+  { id: 35, name: '权杖国王', nameEn: 'King of Wands', type: 'minor' },
+  // 小阿尔卡那 - 圣杯 (14张)
+  { id: 36, name: '圣杯ACE', nameEn: 'ACE of Cups', type: 'minor' },
+  { id: 37, name: '圣杯2', nameEn: '2 of Cups', type: 'minor' },
+  { id: 38, name: '圣杯3', nameEn: '3 of Cups', type: 'minor' },
+  { id: 39, name: '圣杯4', nameEn: '4 of Cups', type: 'minor' },
+  { id: 40, name: '圣杯5', nameEn: '5 of Cups', type: 'minor' },
+  { id: 41, name: '圣杯6', nameEn: '6 of Cups', type: 'minor' },
+  { id: 42, name: '圣杯7', nameEn: '7 of Cups', type: 'minor' },
+  { id: 43, name: '圣杯8', nameEn: '8 of Cups', type: 'minor' },
+  { id: 44, name: '圣杯9', nameEn: '9 of Cups', type: 'minor' },
+  { id: 45, name: '圣杯10', nameEn: '10 of Cups', type: 'minor' },
+  { id: 46, name: '圣杯侍从', nameEn: 'Page of Cups', type: 'minor' },
+  { id: 47, name: '圣杯骑士', nameEn: 'Knight of Cups', type: 'minor' },
+  { id: 48, name: '圣杯王后', nameEn: 'Queen of Cups', type: 'minor' },
+  { id: 49, name: '圣杯国王', nameEn: 'King of Cups', type: 'minor' },
+  // 小阿尔卡那 - 宝剑 (14张)
+  { id: 50, name: '宝剑ACE', nameEn: 'ACE of Swords', type: 'minor' },
+  { id: 51, name: '宝剑2', nameEn: '2 of Swords', type: 'minor' },
+  { id: 52, name: '宝剑3', nameEn: '3 of Swords', type: 'minor' },
+  { id: 53, name: '宝剑4', nameEn: '4 of Swords', type: 'minor' },
+  { id: 54, name: '宝剑5', nameEn: '5 of Swords', type: 'minor' },
+  { id: 55, name: '宝剑6', nameEn: '6 of Swords', type: 'minor' },
+  { id: 56, name: '宝剑7', nameEn: '7 of Swords', type: 'minor' },
+  { id: 57, name: '宝剑8', nameEn: '8 of Swords', type: 'minor' },
+  { id: 58, name: '宝剑9', nameEn: '9 of Swords', type: 'minor' },
+  { id: 59, name: '宝剑10', nameEn: '10 of Swords', type: 'minor' },
+  { id: 60, name: '宝剑侍从', nameEn: 'Page of Swords', type: 'minor' },
+  { id: 61, name: '宝剑骑士', nameEn: 'Knight of Swords', type: 'minor' },
+  { id: 62, name: '宝剑王后', nameEn: 'Queen of Swords', type: 'minor' },
+  { id: 63, name: '宝剑国王', nameEn: 'King of Swords', type: 'minor' },
+  // 小阿尔卡那 - 星币 (14张)
+  { id: 64, name: '星币ACE', nameEn: 'ACE of Pentacles', type: 'minor' },
+  { id: 65, name: '星币2', nameEn: '2 of Pentacles', type: 'minor' },
+  { id: 66, name: '星币3', nameEn: '3 of Pentacles', type: 'minor' },
+  { id: 67, name: '星币4', nameEn: '4 of Pentacles', type: 'minor' },
+  { id: 68, name: '星币5', nameEn: '5 of Pentacles', type: 'minor' },
+  { id: 69, name: '星币6', nameEn: '6 of Pentacles', type: 'minor' },
+  { id: 70, name: '星币7', nameEn: '7 of Pentacles', type: 'minor' },
+  { id: 71, name: '星币8', nameEn: '8 of Pentacles', type: 'minor' },
+  { id: 72, name: '星币9', nameEn: '9 of Pentacles', type: 'minor' },
+  { id: 73, name: '星币10', nameEn: '10 of Pentacles', type: 'minor' },
+  { id: 74, name: '星币侍从', nameEn: 'Page of Pentacles', type: 'minor' },
+  { id: 75, name: '星币骑士', nameEn: 'Knight of Pentacles', type: 'minor' },
+  { id: 76, name: '星币王后', nameEn: 'Queen of Pentacles', type: 'minor' },
+  { id: 77, name: '星币国王', nameEn: 'King of Pentacles', type: 'minor' }
+];
+
 export default {
   name: 'App',
   setup() {
@@ -139,6 +271,13 @@ export default {
     const isStreaming = ref(false);
     const messagesContainer = ref(null);
     const isSidebarOpen = ref(false);
+
+    // 抽牌相关状态
+    const showTarotDraw = ref(false);
+    const tarotDrawConfig = ref(null);
+    const selectedCards = ref([]);
+    const shuffledCards = ref([]);
+
     let eventSource = null;
 
     // 当前会话
@@ -227,37 +366,130 @@ export default {
     // 监听当前会话的消息变化
     watch(() => currentSession.value?.messages, () => {
       scrollToBottom();
-    }, { deep: true });
+    }, {deep: true});
 
-    // 发送消息
-    const handleSendMessage = async () => {
-      if (!inputValue.value.trim() || isStreaming.value || !currentSession.value) return;
-
-      const session = currentSession.value;
-
-      // 如果是第一条用户消息,更新会话标题
-      const isFirstUserMessage = session.messages.every(m => m.type === 'ai');
-      if (isFirstUserMessage) {
-        session.title = generateSessionTitle(inputValue.value);
+    // 检测是否包含抽牌触发标记
+    const detectTarotDrawTrigger = (content) => {
+      // 1. 优先检测特殊标记
+      const match = content.match(/\[TAROT_DRAW_START\](.*?)\[TAROT_DRAW_END\]/s);
+      if (match) {
+        try {
+          const config = JSON.parse(match[1]);
+          return config;
+        } catch (e) {
+          console.warn('抽牌配置解析失败', e);
+        }
       }
 
-      // 添加用户消息
-      const userMessage = {
-        id: Date.now(),
-        type: 'user',
-        content: inputValue.value,
-        timestamp: new Date().toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      };
-      session.messages.push(userMessage);
+      // 2. 兼容纯文字提示（包含选牌/抽牌/占卜等关键词就触发）
+      const triggerKeywords = ['选牌', '抽牌', '占卜', '塔罗牌'];
+      const hasKeyword = triggerKeywords.some(keyword => content.includes(keyword));
+      if (hasKeyword) {
+        return {
+          message: content, // 使用AI的原始回复作为提示
+          question: content,
+          count: 3 // 默认抽3张牌
+        };
+      }
 
-      // 更新会话时间
-      session.lastMessageTime = userMessage.timestamp;
+      return null;
+    };
+
+    // 洗牌
+    const shuffleCards = (count) => {
+      const shuffled = [...TAROT_CARDS].sort(() => Math.random() - 0.5);
+      shuffledCards.value = shuffled.slice(0, Math.min(count * 10, 30)); // 显示更多牌供选择
+    };
+
+    // 判断卡片是否已选中
+    const isCardSelected = (card) => {
+      return selectedCards.value.find(c => c.id === card.id);
+    };
+
+    // 选择塔罗牌
+    const handleCardSelect = (card) => {
+      if (isCardSelected(card)) return;
+
+      const newCard = {
+        ...card,
+        reversed: Math.random() > 0.5 // 随机正逆位
+      };
+
+      selectedCards.value.push(newCard);
+
+      // 如果已选够牌,自动提交
+      if (selectedCards.value.length >= (tarotDrawConfig.value?.count || 3)) {
+        setTimeout(() => {
+          confirmTarotDraw();
+        }, 500);
+      }
+    };
+
+    // 关闭抽牌界面
+    const closeTarotDraw = () => {
+      showTarotDraw.value = false;
+      selectedCards.value = [];
+      shuffledCards.value = [];
+      tarotDrawConfig.value = null;
+    };
+
+    // 确认抽牌
+    const confirmTarotDraw = () => {
+      const cardsData = selectedCards.value.map((c, idx) => ({
+        name: c.name,
+        nameEn: c.nameEn,
+        reversed: c.reversed,
+        position: idx + 1
+      }));
+
+      // 构造发送给AI的消息
+      const resultMessage = `用户抽取了以下塔罗牌:\n${cardsData.map(c =>
+          `${c.position}. ${c.name}(${c.nameEn}) - ${c.reversed ? '逆位' : '正位'}`
+      ).join('\n')}\n\n问题: ${tarotDrawConfig.value?.question || ''}`;
+
+      // 关闭抽牌界面
+      closeTarotDraw();
+
+      // 发送结果给AI
+      sendMessageToAI(resultMessage, true);
+    };
+
+    // 发送消息
+    const handleSendMessage = () => {
+      if (!inputValue.value.trim() || isStreaming.value || !currentSession.value) return;
 
       const messageToSend = inputValue.value;
       inputValue.value = '';
+      sendMessageToAI(messageToSend, false);
+    };
+
+    // 发送消息到AI (统一处理)
+    const sendMessageToAI = async (message, isSystemMessage = false) => {
+      const session = currentSession.value;
+      if (!session) return;
+
+
+      // 如果是第一条用户消息,更新会话标题
+      const isFirstUserMessage = session.messages.every(m => m.type === 'ai');
+      if (isFirstUserMessage && !isSystemMessage) {
+        session.title = generateSessionTitle(message);
+      }
+
+      // 添加用户消息 (系统消息不显示)
+      if (!isSystemMessage) {
+        const userMessage = {
+          id: Date.now(),
+          type: 'user',
+          content: message,
+          timestamp: new Date().toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        };
+        session.messages.push(userMessage);
+        session.lastMessageTime = userMessage.timestamp;
+      }
+
       scrollToBottom();
 
       // 创建AI消息占位符
@@ -276,7 +508,7 @@ export default {
 
       try {
         // 使用 EventSource 进行 SSE 连接
-        const url = `http://localhost:8081/api/ai/chat?memoryId=${session.memoryId}&message=${encodeURIComponent(messageToSend)}`;
+        const url = `http://localhost:8081/api/ai/chat?memoryId=${session.memoryId}&message=${encodeURIComponent(message)}`;
         eventSource = new EventSource(url);
 
         eventSource.onmessage = (event) => {
@@ -284,28 +516,29 @@ export default {
           const lastMessage = session.messages[session.messages.length - 1];
           if (lastMessage && lastMessage.type === 'ai') {
             lastMessage.content += chunk;
+
+            // 检测是否触发抽牌
+            const drawConfig = detectTarotDrawTrigger(lastMessage.content);
+            if (drawConfig) {
+              // 移除触发标记（如果有），保留提示消息
+              lastMessage.content = lastMessage.content.replace(
+                  /\[TAROT_DRAW_START\].*?\[TAROT_DRAW_END\]/s,
+                  ''
+              ).trim() || drawConfig.message;
+
+              // 关键修复：使用nextTick确保状态更新触发视图渲染
+              nextTick(() => {
+                tarotDrawConfig.value = {
+                  question: drawConfig.question || '',
+                  message: drawConfig.message || '请选择塔罗牌',
+                  count: drawConfig.count || 3
+                };
+                shuffleCards(tarotDrawConfig.value.count);
+                showTarotDraw.value = true; // 强制显示抽牌界面
+              });
+            }
           }
         };
-
-        eventSource.onerror = (error) => {
-          console.error('SSE Error:', error);
-          if (eventSource) {
-            eventSource.close();
-          }
-          isStreaming.value = false;
-
-          const lastMessage = session.messages[session.messages.length - 1];
-          if (lastMessage && lastMessage.type === 'ai' && !lastMessage.content) {
-            lastMessage.content = '抱歉,连接出现问题。请确保后端服务正在运行(http://localhost:8081)';
-          }
-        };
-
-        eventSource.addEventListener('end', () => {
-          if (eventSource) {
-            eventSource.close();
-          }
-          isStreaming.value = false;
-        });
 
       } catch (error) {
         console.error('Error:', error);
@@ -324,6 +557,7 @@ export default {
     });
 
     return {
+      // 响应式状态
       sessions,
       currentSessionId,
       currentSession,
@@ -331,145 +565,154 @@ export default {
       isStreaming,
       messagesContainer,
       isSidebarOpen,
+      showTarotDraw,
+      tarotDrawConfig,
+      selectedCards,
+      shuffledCards,
+      // 方法 (关键修复：添加模板中调用的所有方法)
       createNewSession,
       switchSession,
       deleteSession,
       toggleSidebar,
-      handleSendMessage
+      handleSendMessage,
+      isCardSelected,
+      handleCardSelect,
+      closeTarotDraw,
+      confirmTarotDraw
     };
-  }
-};
+  } // 修复：拆分闭合花括号，不再连写
+}; // 修复：正确闭合export default
 </script>
-
 <style scoped>
-* {
-  box-sizing: border-box;
-}
-
+/* 全局容器样式 */
 .app-container {
   display: flex;
   height: 100vh;
-  background: linear-gradient(to bottom right, #581c87, #3730a3, #1e3a8a);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  width: 100vw;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ========== 左侧边栏 ========== */
+/* 侧边栏样式 */
 .sidebar {
   width: 280px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-right: 1px solid rgba(167, 139, 250, 0.2);
+  background-color: #f8fafc;
+  border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease;
+  z-index: 10;
 }
 
+.sidebar-open {
+  transform: translateX(0);
+}
+
+/* 移动端侧边栏隐藏/显示 */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    height: 100vh;
+    transform: translateX(-100%);
+  }
+
+  .mobile-menu-btn {
+    display: block !important;
+  }
+}
+
+/* 侧边栏头部 */
 .sidebar-header {
-  padding: 1rem;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.2);
+  padding: 16px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  align-items: center;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .logo-section {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: white;
+  gap: 8px;
   font-weight: 600;
-  font-size: 1rem;
+  color: #1e293b;
+  font-size: 16px;
 }
 
-.logo-section .sparkles-icon {
-  width: 1.5rem;
-  height: 1.5rem;
-  color: #d8b4fe;
+.sparkles-icon {
+  color: #8b5cf6;
 }
 
 .new-chat-btn {
-  background: rgba(124, 58, 237, 0.8);
-  color: white;
+  background: transparent;
   border: none;
-  border-radius: 0.5rem;
-  padding: 0.5rem;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  flex-shrink: 0;
+  color: #64748b;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
 }
 
 .new-chat-btn:hover {
-  background: rgba(124, 58, 237, 1);
-  transform: scale(1.05);
+  background-color: #e2e8f0;
+  color: #1e293b;
 }
 
+/* 会话列表 */
 .sessions-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem;
+  padding: 8px;
 }
 
 .session-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem;
-  margin-bottom: 0.5rem;
-  border-radius: 0.5rem;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 4px;
   cursor: pointer;
-  transition: all 0.2s;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background-color 0.2s;
 }
 
 .session-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(167, 139, 250, 0.3);
+  background-color: #e2e8f0;
 }
 
 .session-item.active {
-  background: rgba(124, 58, 237, 0.3);
-  border-color: rgba(124, 58, 237, 0.5);
+  background-color: #ede9fe;
+  color: #8b5cf6;
 }
 
 .session-info {
   flex: 1;
-  min-width: 0;
+  overflow: hidden;
 }
 
 .session-title {
-  color: white;
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 0.25rem;
 }
 
 .session-time {
-  color: rgba(216, 180, 254, 0.7);
-  font-size: 0.75rem;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
 }
 
 .delete-btn {
   background: transparent;
   border: none;
-  color: rgba(239, 68, 68, 0.7);
   cursor: pointer;
-  padding: 0.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.25rem;
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
   opacity: 0;
   transition: all 0.2s;
-  flex-shrink: 0;
 }
 
 .session-item:hover .delete-btn {
@@ -477,79 +720,68 @@ export default {
 }
 
 .delete-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: rgba(239, 68, 68, 1);
+  color: #ef4444;
+  background-color: #fef2f2;
 }
 
-/* ========== 主内容区 ========== */
+/* 主内容区 */
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  position: relative;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .mobile-menu-btn {
   display: none;
   position: absolute;
-  top: 1rem;
-  left: 1rem;
-  z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(167, 139, 250, 0.3);
-  color: white;
-  border-radius: 0.5rem;
-  padding: 0.5rem;
+  top: 16px;
+  left: 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px;
   cursor: pointer;
+  z-index: 5;
 }
 
+/* 头部 */
 .header {
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(167, 139, 250, 0.3);
-  padding: 1rem;
+  padding: 16px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: white;
 }
 
-.header-content {
-  max-width: 56rem;
-  margin: 0 auto;
-}
-
-.header h1 {
-  color: white;
-  font-size: 1.5rem;
-  line-height: 2rem;
+.header-content h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
   margin: 0;
-  font-weight: 700;
 }
 
 .session-id {
-  color: #d8b4fe;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  margin: 0.25rem 0 0;
+  font-size: 12px;
+  color: #64748b;
+  margin: 4px 0 0 0;
 }
 
-/* Messages Area */
+/* 消息区域 */
 .messages-area {
   flex: 1;
+  padding: 16px;
   overflow-y: auto;
-  padding: 1rem;
+  background-color: white;
 }
 
 .messages-wrapper {
-  max-width: 56rem;
+  max-width: 800px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
 }
 
 .message-row {
   display: flex;
-  width: 100%;
+  margin-bottom: 16px;
 }
 
 .message-left {
@@ -562,54 +794,53 @@ export default {
 
 .message-bubble {
   max-width: 70%;
-  padding: 1rem;
-  border-radius: 1rem;
-  word-wrap: break-word;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  padding: 12px 16px;
+  border-radius: 16px;
+  position: relative;
 }
 
 .message-bubble.user {
-  background: #7c3aed;
+  background-color: #8b5cf6;
   color: white;
+  border-bottom-right-radius: 4px;
 }
 
 .message-bubble.ai {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: white;
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  background-color: #f1f5f9;
+  color: #1e293b;
+  border-bottom-left-radius: 4px;
 }
 
 .message-content {
-  white-space: pre-wrap;
+  font-size: 14px;
   line-height: 1.5;
-  word-break: break-word;
 }
 
 .message-time {
-  font-size: 0.75rem;
-  line-height: 1rem;
-  margin-top: 0.5rem;
-  opacity: 0.7;
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 4px;
+  opacity: 0.8;
 }
 
-.message-bubble.loading {
-  padding: 1rem 1.5rem;
+.message-bubble.user .message-time {
+  color: #e0d5ff;
+  text-align: right;
 }
 
+/* 加载动画 */
 .loading-dots {
   display: flex;
-  gap: 0.25rem;
-  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
 }
 
 .loading-dots span {
-  width: 0.5rem;
-  height: 0.5rem;
-  background: #a78bfa;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  animation: bounce 1.4s infinite ease-in-out both;
+  background-color: #64748b;
+  animation: loading 1.4s infinite ease-in-out both;
 }
 
 .loading-dots span:nth-child(1) {
@@ -620,158 +851,237 @@ export default {
   animation-delay: -0.16s;
 }
 
-@keyframes bounce {
+@keyframes loading {
   0%, 80%, 100% {
     transform: scale(0);
-    opacity: 0.5;
   }
   40% {
     transform: scale(1);
-    opacity: 1;
   }
 }
 
-/* Input Area */
+/* 输入区域 */
 .input-area {
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(167, 139, 250, 0.3);
-  padding: 1rem;
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  background-color: white;
 }
 
 .input-wrapper {
-  max-width: 56rem;
+  max-width: 800px;
   margin: 0 auto;
   display: flex;
-  gap: 0.75rem;
+  gap: 8px;
 }
 
 .message-input {
   flex: 1;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(167, 139, 250, 0.3);
-  border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
-  color: white;
-  font-size: 1rem;
-  line-height: 1.5rem;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 14px;
   outline: none;
-  transition: all 0.2s;
-}
-
-.message-input::placeholder {
-  color: #d8b4fe;
-  opacity: 0.6;
+  transition: border-color 0.2s;
 }
 
 .message-input:focus {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  border-color: #8b5cf6;
 }
 
 .message-input:disabled {
-  opacity: 0.5;
+  background-color: #f8fafc;
   cursor: not-allowed;
 }
 
 .send-button {
-  background: #7c3aed;
+  background-color: #8b5cf6;
   color: white;
   border: none;
-  border-radius: 0.75rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  line-height: 1.5rem;
-  font-weight: 600;
+  border-radius: 12px;
+  padding: 12px 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.send-button:hover:not(:disabled) {
-  background: #6d28d9;
+  gap: 8px;
+  font-weight: 500;
+  transition: background-color 0.2s;
 }
 
 .send-button:disabled {
-  background: #6b7280;
+  background-color: #c4b5fd;
   cursor: not-allowed;
+}
+
+.send-button:hover:not(:disabled) {
+  background-color: #7c3aed;
+}
+
+/* 抽牌弹窗遮罩 */
+.tarot-draw-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.tarot-draw-modal {
+  background-color: white;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+.tarot-header {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.tarot-header h2 {
+  color: #1e293b;
+  margin: 0 0 8px 0;
+}
+
+.tarot-message {
+  color: #64748b;
+  margin: 0 0 4px 0;
+}
+
+.tarot-progress {
+  font-size: 14px;
+  color: #8b5cf6;
+  font-weight: 500;
+  margin: 8px 0 0 0;
+}
+
+/* 塔罗牌网格 */
+.tarot-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.tarot-card {
+  aspect-ratio: 2/3;
+  background-color: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.tarot-card:hover:not(:disabled) {
+  border-color: #8b5cf6;
+  background-color: #f5f3ff;
+}
+
+.tarot-card.selected {
+  background-color: #8b5cf6;
+  border-color: #7c3aed;
+  color: white;
+}
+
+.tarot-card:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
 }
 
-.send-button svg {
-  flex-shrink: 0;
+/* 已选卡牌信息 */
+.selected-cards-info {
+  margin-bottom: 24px;
+  padding: 16px;
+  background-color: #f8fafc;
+  border-radius: 8px;
 }
 
-/* Scrollbar */
-.sessions-list::-webkit-scrollbar,
-.messages-area::-webkit-scrollbar {
-  width: 6px;
+.selected-cards-info h3 {
+  color: #1e293b;
+  margin: 0 0 12px 0;
+  font-size: 16px;
 }
 
-.sessions-list::-webkit-scrollbar-track,
-.messages-area::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+.selected-cards-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
 }
 
-.sessions-list::-webkit-scrollbar-thumb,
-.messages-area::-webkit-scrollbar-thumb {
-  background: rgba(124, 58, 237, 0.5);
-  border-radius: 3px;
+.selected-card-item {
+  padding: 8px 12px;
+  background-color: white;
+  border-radius: 6px;
+  border-left: 3px solid #8b5cf6;
+  font-size: 14px;
 }
 
-.sessions-list::-webkit-scrollbar-thumb:hover,
-.messages-area::-webkit-scrollbar-thumb:hover {
-  background: rgba(124, 58, 237, 0.7);
+/* 抽牌操作按钮 */
+.tarot-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
 }
 
-/* 遮罩层 */
+.tarot-btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.tarot-btn-cancel {
+  background-color: #f8fafc;
+  color: #64748b;
+}
+
+.tarot-btn-cancel:hover {
+  background-color: #e2e8f0;
+}
+
+.tarot-btn-confirm {
+  background-color: #8b5cf6;
+  color: white;
+}
+
+.tarot-btn-confirm:hover {
+  background-color: #7c3aed;
+}
+
+/* 移动端遮罩层 */
 .overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 5;
   display: none;
 }
 
-/* 响应式设计 */
 @media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    height: 100vh;
-    z-index: 1000;
-    transform: translateX(-100%);
-  }
-
-  .sidebar.sidebar-open {
-    transform: translateX(0);
-  }
-
   .overlay {
     display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
-  .mobile-menu-btn {
-    display: flex;
-  }
-
-  .header {
-    padding-left: 4rem;
-  }
-
-  .message-bubble {
-    max-width: 85%;
-  }
-
-  .send-button {
-    padding: 0.75rem 1rem;
   }
 }
 </style>
