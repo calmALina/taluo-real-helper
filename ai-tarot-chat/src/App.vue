@@ -366,32 +366,19 @@ export default {
     // 监听当前会话的消息变化
     watch(() => currentSession.value?.messages, () => {
       scrollToBottom();
-    }, {deep: true});
+    }, { deep: true });
 
     // 检测是否包含抽牌触发标记
     const detectTarotDrawTrigger = (content) => {
-      // 1. 优先检测特殊标记
       const match = content.match(/\[TAROT_DRAW_START\](.*?)\[TAROT_DRAW_END\]/s);
       if (match) {
         try {
           const config = JSON.parse(match[1]);
           return config;
         } catch (e) {
-          console.warn('抽牌配置解析失败', e);
+          return null;
         }
       }
-
-      // 2. 兼容纯文字提示（包含选牌/抽牌/占卜等关键词就触发）
-      const triggerKeywords = ['选牌', '抽牌', '占卜', '塔罗牌'];
-      const hasKeyword = triggerKeywords.some(keyword => content.includes(keyword));
-      if (hasKeyword) {
-        return {
-          message: content, // 使用AI的原始回复作为提示
-          question: content,
-          count: 3 // 默认抽3张牌
-        };
-      }
-
       return null;
     };
 
@@ -468,7 +455,6 @@ export default {
       const session = currentSession.value;
       if (!session) return;
 
-
       // 如果是第一条用户消息,更新会话标题
       const isFirstUserMessage = session.messages.every(m => m.type === 'ai');
       if (isFirstUserMessage && !isSystemMessage) {
@@ -520,25 +506,43 @@ export default {
             // 检测是否触发抽牌
             const drawConfig = detectTarotDrawTrigger(lastMessage.content);
             if (drawConfig) {
-              // 移除触发标记（如果有），保留提示消息
+              // 移除触发标记,保留提示消息
               lastMessage.content = lastMessage.content.replace(
                   /\[TAROT_DRAW_START\].*?\[TAROT_DRAW_END\]/s,
-                  ''
-              ).trim() || drawConfig.message;
+                  drawConfig.message || ''
+              );
 
-              // 关键修复：使用nextTick确保状态更新触发视图渲染
-              nextTick(() => {
-                tarotDrawConfig.value = {
-                  question: drawConfig.question || '',
-                  message: drawConfig.message || '请选择塔罗牌',
-                  count: drawConfig.count || 3
-                };
-                shuffleCards(tarotDrawConfig.value.count);
-                showTarotDraw.value = true; // 强制显示抽牌界面
-              });
+              // 显示抽牌界面
+              tarotDrawConfig.value = {
+                question: drawConfig.question || '',
+                message: drawConfig.message || '请选择塔罗牌',
+                count: drawConfig.count || 3
+              };
+              shuffleCards(tarotDrawConfig.value.count);
+              showTarotDraw.value = true;
             }
           }
         };
+
+        eventSource.onerror = (error) => {
+          console.error('SSE Error:', error);
+          if (eventSource) {
+            eventSource.close();
+          }
+          isStreaming.value = false;
+
+          const lastMessage = session.messages[session.messages.length - 1];
+          if (lastMessage && lastMessage.type === 'ai' && !lastMessage.content) {
+            lastMessage.content = '抱歉,连接出现问题。请确保后端服务正在运行(http://localhost:8081)';
+          }
+        };
+
+        eventSource.addEventListener('end', () => {
+          if (eventSource) {
+            eventSource.close();
+          }
+          isStreaming.value = false;
+        });
 
       } catch (error) {
         console.error('Error:', error);
@@ -557,7 +561,6 @@ export default {
     });
 
     return {
-      // 响应式状态
       sessions,
       currentSessionId,
       currentSession,
